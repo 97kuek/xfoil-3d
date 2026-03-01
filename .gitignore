@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# XFOIL 一時ファイル・解析結果
+polar_*.txt
+dump_*.txt
+clean_*.dat
+
+# 解析出力（HTMLとCSVは任意でignore）
+*_polar_3d.html
+*_polar_raw.csv
+*_polar_interp.csv
+*_polar_data.csv
+
+# XFOIL 実行ファイル（バイナリは各自で用意）
+xfoil.exe
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
