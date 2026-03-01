@@ -26,7 +26,20 @@ pip install numpy pandas plotly scipy tqdm
 
 ## 使い方
 
+```powershell
+# PowerShell（Windows）
+python xfoil_3d.py --dat_file Airfoils/NACA0009.dat --re_range 100000 500000 5 --alpha_range -10 15 1 --ncrit 9
+
+# PowerShell（複数行に分けたい場合はバッククォートで継続）
+python xfoil_3d.py `
+  --dat_file Airfoils/NACA0009.dat `
+  --re_range 100000 500000 5 `
+  --alpha_range -10 15 1 `
+  --ncrit 9
+```
+
 ```bash
+# bash / Linux / macOS
 python xfoil_3d.py \
   --dat_file Airfoils/NACA0009.dat \
   --re_range 100000 500000 5 \
