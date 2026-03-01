@@ -8,8 +8,16 @@ import webbrowser
 import subprocess
 import tempfile
 import uuid
+from pathlib import Path
 from tqdm import tqdm
 from scipy.interpolate import Rbf
+import yaml
+try:
+    import questionary
+    QUESTIONARY_AVAILABLE = True
+except ImportError:
+    QUESTIONARY_AVAILABLE = False
+
 
 
 def calculate_polar(args):
@@ -118,48 +126,187 @@ def clean_airfoil_dat(in_path, out_path):
     except Exception as e:
         print(f"Warning: Failed to clean dat file: {e}")
 
+
+def load_config(config_path: str) -> dict:
+    """YAMLファイルから設定を読み込む"""
+    with open(config_path, 'r', encoding='utf-8') as f:
+        cfg = yaml.safe_load(f)
+    print(f"設定ファイルを読み込みました: {config_path}")
+    return cfg
+
+
+def save_config(config_path: str, cfg: dict) -> None:
+    """設定をYAMLファイルに保存する"""
+    with open(config_path, 'w', encoding='utf-8') as f:
+        yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    print(f"設定を保存しました: {config_path}")
+
+
+def interactive_mode() -> dict:
+    """
+    引数が指定されていない場合に対話式でパラメータを入力するモード。
+    questionary がない場合は通常の input() にフォールバックする。
+    """
+    print("\n=== XFOIL 3D Polar - インタラクティブモード ===")
+
+    # Airfoils/ ディレクトリの .dat ファイルを列挙
+    airfoil_dir = Path('Airfoils')
+    dat_files = sorted(str(p) for p in airfoil_dir.glob('*.dat')) if airfoil_dir.exists() else []
+
+    if QUESTIONARY_AVAILABLE:
+        # --- questionary を使ったリッチなプロンプト ---
+        if dat_files:
+            choices = dat_files + ['[手動入力]']
+            dat_choice = questionary.select(
+                "翼型ファイルを選択してください:",
+                choices=choices
+            ).ask()
+            if dat_choice == '[手動入力]':
+                dat_file = questionary.text("翼型ファイルのパスを入力:").ask()
+            else:
+                dat_file = dat_choice
+        else:
+            dat_file = questionary.text("翼型ファイルのパスを入力:").ask()
+
+        re_min   = float(questionary.text("レイノルズ数 最小値:",  default="100000").ask())
+        re_max   = float(questionary.text("レイノルズ数 最大値:",  default="500000").ask())
+        re_count = int  (questionary.text("レイノルズ数 分割数:",  default="5").ask())
+        a_min    = float(questionary.text("迎角 最小 (deg):",       default="-10").ask())
+        a_max    = float(questionary.text("迎角 最大 (deg):",       default="15").ask())
+        a_step   = float(questionary.text("迎角 ステップ (deg):",   default="1").ask())
+        ncrit    = float(questionary.text("N-crit 値:",             default="9.0").ask())
+        xfoil_exe = questionary.text("XFOIL 実行ファイルパス:",      default="xfoil.exe").ask()
+        open_browser = questionary.confirm("計算後にブラウザを自動で開きますか?", default=True).ask()
+    else:
+        # --- フォールバック: 標準 input() ---
+        if dat_files:
+            print("利用可能な翼型ファイル:")
+            for i, f in enumerate(dat_files):
+                print(f"  [{i}] {f}")
+            idx = input("番号を選択 (手動入力は Enter): ").strip()
+            dat_file = dat_files[int(idx)] if idx.isdigit() and int(idx) < len(dat_files) else input("ファイルパス: ").strip()
+        else:
+            dat_file = input("翼型ファイルのパスを入力: ").strip()
+        re_min    = float(input("レイノルズ数 最小値 [100000]: ").strip() or "100000")
+        re_max    = float(input("レイノルズ数 最大値 [500000]: ").strip() or "500000")
+        re_count  = int  (input("レイノルズ数 分割数 [5]: ").strip() or "5")
+        a_min     = float(input("迎角 最小 (deg) [-10]: ").strip() or "-10")
+        a_max     = float(input("迎角 最大 (deg) [15]: ").strip() or "15")
+        a_step    = float(input("迎角 ステップ (deg) [1]: ").strip() or "1")
+        ncrit     = float(input("N-crit 値 [9.0]: ").strip() or "9.0")
+        xfoil_exe = input("XFOIL 実行ファイルパス [xfoil.exe]: ").strip() or "xfoil.exe"
+        open_browser = (input("計算後にブラウザを開きますか？ [Y/n]: ").strip().lower() != 'n')
+
+    cfg = {
+        'dat_file':    dat_file,
+        're_range':    [re_min, re_max, re_count],
+        'alpha_range': [a_min, a_max, a_step],
+        'ncrit':       ncrit,
+        'xfoil_exe':   xfoil_exe,
+        'no_browser':  not open_browser,
+    }
+
+    # 設定の保存確認
+    if QUESTIONARY_AVAILABLE:
+        do_save = questionary.confirm("この設定を YAML ファイルに保存しますか?", default=True).ask()
+        if do_save:
+            fname = questionary.text("保存先ファイル名:", default="config.yaml").ask()
+            save_config(fname, cfg)
+    else:
+        do_save = input("設定を YAML ファイルに保存しますか？ [Y/n]: ").strip().lower() != 'n'
+        if do_save:
+            fname = input("保存先ファイル名 [config.yaml]: ").strip() or "config.yaml"
+            save_config(fname, cfg)
+
+    print()
+    return cfg
+
+
 def main():
-    parser = argparse.ArgumentParser(description="XFOIL 3D Polar Visualization Tool (Cl, Cd, Cm)")
-    parser.add_argument('--dat_file', type=str, required=True, help="Path to the airfoil .dat file")
-    parser.add_argument('--re_range', type=float, nargs=3, metavar=('MIN', 'MAX', 'COUNT'), required=True, help="Reynolds number range: min max count")
-    parser.add_argument('--alpha_range', type=float, nargs=3, metavar=('MIN', 'MAX', 'STEP'), required=True, help="Alpha range: min max step")
-    parser.add_argument('--ncrit', type=float, default=9.0, help="N-crit value for XFOIL (default: 9.0)")
-    parser.add_argument('--xfoil_exe', type=str, default='xfoil.exe', help="Path to XFOIL executable")
-    parser.add_argument('--no_browser', action='store_true', help="Disable automatic browser opening")
-    
+    parser = argparse.ArgumentParser(
+        description="XFOIL 3D Polar Visualization Tool (Cl, Cd, Cm)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="引数を省略するとインタラクティブモードで起動します。\n例: python xfoil_3d.py --config config.yaml"
+    )
+    parser.add_argument('--dat_file',    type=str,   help="翼型 .dat ファイルのパス")
+    parser.add_argument('--re_range',    type=float, nargs=3, metavar=('MIN','MAX','COUNT'), help="レイノルズ数: min max 分割数")
+    parser.add_argument('--alpha_range', type=float, nargs=3, metavar=('MIN','MAX','STEP'),  help="迎角: min max step (deg)")
+    parser.add_argument('--ncrit',       type=float, default=9.0, help="N-crit 値 (デフォルト: 9.0)")
+    parser.add_argument('--xfoil_exe',   type=str,   default='xfoil.exe', help="XFOIL 実行ファイルのパス")
+    parser.add_argument('--no_browser',  action='store_true', help="ブラウザの自動起動を無効化")
+    parser.add_argument('--config',      type=str,   help="YAML 設定ファイルのパス")
+    parser.add_argument('--save_config', type=str,   metavar='FILE', help="現在の設定を指定の YAML ファイルに保存して終了")
+
     args = parser.parse_args()
-    
-    if not os.path.exists(args.dat_file):
-        print(f"Error: File '{args.dat_file}' not found.")
+
+    # ── 設定の優先順位: --config > CLI引数 > インタラクティブモード ──
+    if args.config:
+        # YAML ファイルから設定を読み込む
+        if not os.path.exists(args.config):
+            print(f"Error: 設定ファイル '{args.config}' が見つかりません。")
+            return
+        cfg = load_config(args.config)
+        # CLI 引数で個別オーバーライド可能
+        if args.dat_file:    cfg['dat_file']    = args.dat_file
+        if args.re_range:    cfg['re_range']    = list(args.re_range)
+        if args.alpha_range: cfg['alpha_range'] = list(args.alpha_range)
+        if args.ncrit != 9.0: cfg['ncrit']      = args.ncrit
+        if args.no_browser:  cfg['no_browser']  = True
+    elif args.dat_file and args.re_range and args.alpha_range:
+        # 必須引数がすべて指定されている場合はそのまま使用
+        cfg = {
+            'dat_file':    args.dat_file,
+            're_range':    list(args.re_range),
+            'alpha_range': list(args.alpha_range),
+            'ncrit':       args.ncrit,
+            'xfoil_exe':   args.xfoil_exe,
+            'no_browser':  args.no_browser,
+        }
+    else:
+        # 必須引数が不足 → インタラクティブモード
+        cfg = interactive_mode()
+
+    # --save_config: 設定を保存して終了
+    if args.save_config:
+        save_config(args.save_config, cfg)
         return
-        
-    if not os.path.exists(args.xfoil_exe):
-        try:
-            subprocess.run([args.xfoil_exe], input="QUIT\n", text=True, capture_output=True, timeout=2)
-        except FileNotFoundError:
-             print(f"Error: XFOIL executable '{args.xfoil_exe}' not found.")
-             return
-             
-    re_min, re_max, re_count = args.re_range
+
+    # cfg から各変数を取り出す
+    dat_file_arg  = cfg.get('dat_file', '')
+    re_min, re_max, re_count = cfg['re_range']
     re_count = int(re_count)
+    alpha_min, alpha_max, alpha_step = cfg['alpha_range']
+    ncrit_val   = cfg.get('ncrit', 9.0)
+    xfoil_exe_arg = cfg.get('xfoil_exe', 'xfoil.exe')
+    no_browser_val = cfg.get('no_browser', False)
+
+    if not os.path.exists(dat_file_arg):
+        print(f"Error: ファイル '{dat_file_arg}' が見つかりません。")
+        return
+
+    if not os.path.exists(xfoil_exe_arg):
+        try:
+            subprocess.run([xfoil_exe_arg], input="QUIT\n", text=True, capture_output=True, timeout=2)
+        except FileNotFoundError:
+            print(f"Error: XFOIL 実行ファイル '{xfoil_exe_arg}' が見つかりません。")
+            return
+
     res = np.linspace(re_min, re_max, re_count)
-    
-    alpha_min, alpha_max, alpha_step = args.alpha_range
     alphas = np.arange(alpha_min, alpha_max + alpha_step/2.0, alpha_step)
     
     num_processes = mp.cpu_count()
     print(f"Starting XFOIL calculations using {num_processes} processes...")
-    print(f"Airfoil: {args.dat_file}")
+    print(f"Airfoil: {dat_file_arg}")
     print(f"Re range: {re_min} to {re_max} ({re_count} steps)")
     
-    xfoil_exe_abs = os.path.abspath(args.xfoil_exe) if os.path.exists(args.xfoil_exe) else args.xfoil_exe
-    dat_file_abs = os.path.abspath(args.dat_file)
-    airfoil_name = os.path.splitext(os.path.basename(args.dat_file))[0]
+    xfoil_exe_abs = os.path.abspath(xfoil_exe_arg) if os.path.exists(xfoil_exe_arg) else xfoil_exe_arg
+    dat_file_abs = os.path.abspath(dat_file_arg)
+    airfoil_name = os.path.splitext(os.path.basename(dat_file_arg))[0]
     
     clean_path = f"clean_{airfoil_name}_{uuid.uuid4().hex[:6]}.dat"
     clean_airfoil_dat(dat_file_abs, clean_path)
     
-    tasks = [(os.path.abspath(clean_path), Re, alpha_min, alpha_max, alpha_step, args.ncrit, xfoil_exe_abs) for Re in res]
+    tasks = [(os.path.abspath(clean_path), Re, alpha_min, alpha_max, alpha_step, ncrit_val, xfoil_exe_abs) for Re in res]
     
     results = []
     # Using tqdm for progress bar
@@ -287,7 +434,7 @@ def main():
 
     fig.update_layout(
         title=dict(
-            text=f'{airfoil_name} 3D Polar (N-crit: {args.ncrit})<br><sub>Approximated via Thin-Plate Spline (RBF) over {valid_run_count} converged points</sub>',
+            text=f'{airfoil_name} 3D Polar (N-crit: {ncrit_val})<br><sub>Approximated via Thin-Plate Spline (RBF) over {valid_run_count} converged points</sub>',
             y=0.97,
             x=0.02,
             xanchor='left',
@@ -346,7 +493,7 @@ def main():
     if os.path.exists(clean_path):
         os.remove(clean_path)
     
-    if not args.no_browser:
+    if not no_browser_val:
         try:
             html_path = 'file://' + os.path.abspath(output_html)
             webbrowser.open(html_path)
