@@ -15,6 +15,7 @@ env/
 polar_*.txt
 dump_*.txt
 clean_*.dat
+_xfoil_tmp_*/
 
 # 解析出力（HTMLとCSVは任意でignore）
 *_polar_3d.html

@@ -1,0 +1,7 @@
+numpy>=1.24
+pandas>=2.0
+plotly>=5.0
+scipy>=1.9
+tqdm>=4.60
+questionary>=2.0
+PyYAML>=6.0

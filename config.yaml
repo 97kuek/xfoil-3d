@@ -1,0 +1,12 @@
+dat_file: Airfoils\rev_root_140.dat
+re_range:
+- 80000.0
+- 600000.0
+- 10000.0
+alpha_range:
+- -3.0
+- 15.0
+- 0.5
+ncrit: 9.0
+xfoil_exe: xfoil.exe
+show_scatter: false
