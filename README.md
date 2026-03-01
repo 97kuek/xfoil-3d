@@ -1,16 +1,7 @@
 # xfoil-3d
 
-XFOIL を用いて翼型の3次元極曲線（Cl / Cd / Cm / Cl/Cd）を計算・可視化するCLIツールです。  
-複数のレイノルズ数に対して並列計算を行い、Thin-Plate Spline (RBF) 補間によって滑らかな3Dサーフェスを生成します。
-
-## 機能
-
-- 複数レイノルズ数を **マルチプロセス** で並列シミュレーション
-- 収束点を **RBF（Thin-Plate Spline）補間** でグリッドに補間
-- **Plotly** による対話的なフルスクリーン 3D グラフ（HTML出力）
-- Cl・Cd・Cm・Cl/Cd の切り替えボタン付き
-- **インタラクティブモード**：引数なしで起動すると矢印キーで選択できる対話型プロンプト
-- **YAML 設定ファイル**：パラメータを保存・再利用可能
+XFOILを用いて翼型の3次元極曲線を計算・可視化するCLIツール。  
+複数のレイノルズ数に対して並列計算を行い、Thin-Plate Spline (RBF) 補間によって滑らかな3Dサーフェスを生成する。
 
 ## 必要環境
 
@@ -27,54 +18,47 @@ pip install numpy pandas plotly scipy tqdm questionary PyYAML
 
 ## 使い方
 
-### ① インタラクティブモード（引数なしで起動）
+### 起動方法
 
 ```powershell
+# 引数なしで起動 → インタラクティブモード
 python xfoil_3d.py
-```
 
-矢印キーで翼型ファイルを選択し、各パラメータを順番に入力できます。  
-終了時に設定を `config.yaml` へ保存するか確認されます。
-
-### ② 設定ファイルを使う（推奨）
-
-```powershell
-# 前回保存した設定で実行
+# 前回保存した設定をデフォルト値として読み込んで起動
 python xfoil_3d.py --config config.yaml
-
-# 設定ファイルの一部だけ上書きして実行
-python xfoil_3d.py --config config.yaml --ncrit 7
 ```
 
-`config.yaml` の例:
+起動すると矢印キーで翼型ファイルを選択し、各パラメータを順番に入力できます。  
+終了時に設定を `config.yaml` へ保存するか確認されます。  
+次回 `--config config.yaml` を指定すれば、前回値がデフォルトとして表示されます。
+
+### インタラクティブモードの入力項目
+
+| 項目 | 説明 | 例 |
+|------|------|----|
+| 翼型ファイル | Airfoils/ から選択または手動入力 | `Airfoils/NACA0009.dat` |
+| Re 最小値 | レイノルズ数の最小値 | `100000` |
+| Re 最大値 | レイノルズ数の最大値 | `500000` |
+| Re ステップ幅 | Re のステップ幅（等間隔で自動生成） | `50000` |
+| 迎角 最小 (deg) | 解析する最小迎角 | `-10` |
+| 迎角 最大 (deg) | 解析する最大迎角 | `15` |
+| 迎角 ステップ (deg) | 迎角のステップ幅 | `0.5` |
+| N-crit 値 | 乱流遷移感度（低いほど早期遷移） | `9.0` |
+| XFOIL 実行ファイル | xfoil.exe のパス | `xfoil.exe` |
+
+### `config.yaml` の例
 
 ```yaml
-dat_file: Airfoils/NACA0009.dat
-re_range: [100000, 500000, 5]
-alpha_range: [-10, 15, 1]
+dat_file: Airfoils/DAE31.dat
+re_range: [100000, 500000, 50000]   # [min, max, step_width]
+alpha_range: [-3, 15, 0.5]
 ncrit: 9.0
 xfoil_exe: xfoil.exe
 no_browser: false
 ```
 
-### ③ 従来どおりの CLI（後方互換）
-
-```powershell
-python xfoil_3d.py --dat_file Airfoils/NACA0009.dat --re_range 100000 500000 5 --alpha_range -10 15 1 --ncrit 9
-```
-
-### 引数一覧
-
-| 引数 | 説明 |
-|------|------|
-| `--config FILE` | YAML 設定ファイルのパス |
-| `--dat_file` | 翼型 `.dat` ファイルのパス |
-| `--re_range MIN MAX COUNT` | レイノルズ数の範囲と分割数 |
-| `--alpha_range MIN MAX STEP` | 迎角の範囲とステップ（°） |
-| `--ncrit` | N-crit 値（デフォルト: 9.0） |
-| `--xfoil_exe` | XFOIL 実行ファイルのパス |
-| `--no_browser` | 計算後にブラウザを自動で開かない |
-| `--save_config FILE` | 現在のCLI引数を YAML に保存して終了 |
+> [!NOTE]
+> `re_range` の第3要素は **ステップ幅**（例: 50000）です。`[100000, 500000, 50000]` と指定すると Re = 100000, 150000, …, 500000 の9点で計算します。
 
 ## 補間アルゴリズム
 

@@ -104,11 +104,11 @@ def calculate_polar(args: tuple) -> dict | None:
             pass
 
     return {
-        'Re':   Re,
+        'Re':     Re,
         'alphas': alphas,
-        'cls':  cl_results,
-        'cds':  cd_results,
-        'cms':  cm_results,
+        'cls':    cl_results,
+        'cds':    cd_results,
+        'cms':    cm_results,
     }
 
 
@@ -190,34 +190,59 @@ def save_config(config_path: str, cfg: dict) -> None:
 # インタラクティブモード
 # ─────────────────────────────────────────────────────────────
 
-def interactive_mode() -> dict:
+def interactive_mode(defaults: dict | None = None) -> dict:
     """
-    引数が不足している場合に対話式でパラメータを入力するモード。
+    対話式でパラメータを入力するモード。
+    defaults に config から読み込んだ値を渡すと、デフォルト値として事前入力される。
     questionary がインストールされていない場合は標準 input() にフォールバックする。
     """
     print("\n=== XFOIL 3D Polar - インタラクティブモード ===")
+
+    # defaults からデフォルト値を取り出す
+    d = defaults or {}
+    d_re   = d.get('re_range',    [100000, 500000, 50000])
+    d_alp  = d.get('alpha_range', [-10, 15, 1])
 
     airfoil_dir = Path('Airfoils')
     dat_files   = sorted(str(p) for p in airfoil_dir.glob('*.dat')) if airfoil_dir.exists() else []
 
     if QUESTIONARY_AVAILABLE:
+        # 翼型ファイル選択
         if dat_files:
-            choices    = dat_files + ['[手動入力]']
-            dat_choice = questionary.select("翼型ファイルを選択してください:", choices=choices).ask()
-            dat_file   = questionary.text("翼型ファイルのパスを入力:").ask() if dat_choice == '[手動入力]' else dat_choice
+            choices  = dat_files + ['[手動入力]']
+            # config に dat_file があり、かつ choices に含まれていればデフォルト選択
+            default_dat = d.get('dat_file')
+            default_choice = default_dat if (default_dat and default_dat in dat_files) else choices[0]
+            dat_choice = questionary.select(
+                "翼型ファイルを選択してください:",
+                choices=choices,
+                default=default_choice,
+            ).ask()
+            dat_file = questionary.text("翼型ファイルのパスを入力:").ask() if dat_choice == '[手動入力]' else dat_choice
         else:
-            dat_file = questionary.text("翼型ファイルのパスを入力:").ask()
+            dat_file = questionary.text(
+                "翼型ファイルのパスを入力:",
+                default=d.get('dat_file', ''),
+            ).ask()
 
-        re_min       = float(questionary.text("レイノルズ数 最小値:",   default="100000").ask())
-        re_max       = float(questionary.text("レイノルズ数 最大値:",   default="500000").ask())
-        re_count     = int  (questionary.text("レイノルズ数 分割数:",   default="5").ask())
-        a_min        = float(questionary.text("迎角 最小 (deg):",       default="-10").ask())
-        a_max        = float(questionary.text("迎角 最大 (deg):",       default="15").ask())
-        a_step       = float(questionary.text("迎角 ステップ (deg):",   default="1").ask())
-        ncrit        = float(questionary.text("N-crit 値:",             default="9.0").ask())
-        xfoil_exe    = questionary.text(      "XFOIL 実行ファイルパス:", default="xfoil.exe").ask()
-        open_browser = questionary.confirm("計算後にブラウザを自動で開きますか?", default=True).ask()
+        re_min   = float(questionary.text("レイノルズ数 最小値:",    default=str(int(d_re[0]))).ask())
+        re_max   = float(questionary.text("レイノルズ数 最大値:",    default=str(int(d_re[1]))).ask())
+        re_step  = float(questionary.text("レイノルズ数 ステップ幅:", default=str(int(d_re[2]))).ask())
+        a_min    = float(questionary.text("迎角 最小 (deg):",        default=str(d_alp[0])).ask())
+        a_max    = float(questionary.text("迎角 最大 (deg):",        default=str(d_alp[1])).ask())
+        a_step   = float(questionary.text("迎角 ステップ (deg):",    default=str(d_alp[2])).ask())
+        ncrit    = float(questionary.text("N-crit 値:",              default=str(d.get('ncrit', 9.0))).ask())
+        xfoil_exe = questionary.text(
+            "XFOIL 実行ファイルパス:",
+            default=d.get('xfoil_exe', 'xfoil.exe'),
+        ).ask()
+        open_browser = questionary.confirm(
+            "計算後にブラウザを自動で開きますか?",
+            default=not d.get('no_browser', False),
+        ).ask()
+
     else:
+        # フォールバック: 標準 input()
         if dat_files:
             print("利用可能な翼型ファイル:")
             for i, f in enumerate(dat_files):
@@ -225,27 +250,28 @@ def interactive_mode() -> dict:
             idx      = input("番号を選択 (手動入力は Enter): ").strip()
             dat_file = dat_files[int(idx)] if idx.isdigit() and int(idx) < len(dat_files) else input("ファイルパス: ").strip()
         else:
-            dat_file = input("翼型ファイルのパスを入力: ").strip()
+            dat_file = input(f"翼型ファイルのパスを入力 [{d.get('dat_file', '')}]: ").strip() or d.get('dat_file', '')
 
-        re_min       = float(input("レイノルズ数 最小値 [100000]: ").strip() or "100000")
-        re_max       = float(input("レイノルズ数 最大値 [500000]: ").strip() or "500000")
-        re_count     = int  (input("レイノルズ数 分割数 [5]: "     ).strip() or "5")
-        a_min        = float(input("迎角 最小 (deg) [-10]: "       ).strip() or "-10")
-        a_max        = float(input("迎角 最大 (deg) [15]: "        ).strip() or "15")
-        a_step       = float(input("迎角 ステップ (deg) [1]: "     ).strip() or "1")
-        ncrit        = float(input("N-crit 値 [9.0]: "             ).strip() or "9.0")
-        xfoil_exe    = input("XFOIL 実行ファイルパス [xfoil.exe]: ").strip() or "xfoil.exe"
+        re_min    = float(input(f"レイノルズ数 最小値 [{int(d_re[0])}]: ").strip() or d_re[0])
+        re_max    = float(input(f"レイノルズ数 最大値 [{int(d_re[1])}]: ").strip() or d_re[1])
+        re_step   = float(input(f"レイノルズ数 ステップ幅 [{int(d_re[2])}]: ").strip() or d_re[2])
+        a_min     = float(input(f"迎角 最小 (deg) [{d_alp[0]}]: ").strip() or d_alp[0])
+        a_max     = float(input(f"迎角 最大 (deg) [{d_alp[1]}]: ").strip() or d_alp[1])
+        a_step    = float(input(f"迎角 ステップ (deg) [{d_alp[2]}]: ").strip() or d_alp[2])
+        ncrit     = float(input(f"N-crit 値 [{d.get('ncrit', 9.0)}]: ").strip() or d.get('ncrit', 9.0))
+        xfoil_exe = input(f"XFOIL 実行ファイルパス [{d.get('xfoil_exe', 'xfoil.exe')}]: ").strip() or d.get('xfoil_exe', 'xfoil.exe')
         open_browser = (input("計算後にブラウザを開きますか？ [Y/n]: ").strip().lower() != 'n')
 
     cfg = {
         'dat_file':    dat_file,
-        're_range':    [re_min, re_max, re_count],
+        're_range':    [re_min, re_max, re_step],   # [min, max, step_width]
         'alpha_range': [a_min, a_max, a_step],
         'ncrit':       ncrit,
         'xfoil_exe':   xfoil_exe,
         'no_browser':  not open_browser,
     }
 
+    # 設定の保存確認
     if QUESTIONARY_AVAILABLE:
         if questionary.confirm("この設定を YAML ファイルに保存しますか?", default=True).ask():
             fname = questionary.text("保存先ファイル名:", default="config.yaml").ask()
@@ -264,53 +290,28 @@ def interactive_mode() -> dict:
 # ─────────────────────────────────────────────────────────────
 
 def main() -> None:
+    # インタラクティブモード専用。--config で前回設定をデフォルト値として読み込める。
     parser = argparse.ArgumentParser(
-        description="XFOIL 3D Polar Visualization Tool (Cl, Cd, Cm)",
+        description="XFOIL 3D Polar Visualization Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="引数を省略するとインタラクティブモードで起動します。\n例: python xfoil_3d.py --config config.yaml",
+        epilog="設定ファイルを指定するとその値がデフォルトとして事前入力されます。\n例: python xfoil_3d.py --config config.yaml",
     )
-    parser.add_argument('--dat_file',    type=str,                                              help="翼型 .dat ファイルのパス")
-    parser.add_argument('--re_range',    type=float, nargs=3, metavar=('MIN', 'MAX', 'COUNT'), help="レイノルズ数: min max 分割数")
-    parser.add_argument('--alpha_range', type=float, nargs=3, metavar=('MIN', 'MAX', 'STEP'),  help="迎角: min max step (deg)")
-    parser.add_argument('--ncrit',       type=float, default=9.0,                               help="N-crit 値 (デフォルト: 9.0)")
-    parser.add_argument('--xfoil_exe',   type=str,   default='xfoil.exe',                      help="XFOIL 実行ファイルのパス")
-    parser.add_argument('--no_browser',  action='store_true',                                   help="ブラウザの自動起動を無効化")
-    parser.add_argument('--config',      type=str,                                              help="YAML 設定ファイルのパス")
-    parser.add_argument('--save_config', type=str,   metavar='FILE',                            help="現在の設定を指定 YAML ファイルに保存して終了")
+    parser.add_argument('--config', type=str, help="前回保存した YAML 設定ファイルのパス")
     args = parser.parse_args()
 
-    # ── 設定の優先順位: --config > CLI引数 > インタラクティブ ──
+    # config が指定されていれば読み込んでデフォルト値として渡す
+    defaults = None
     if args.config:
         if not os.path.exists(args.config):
             print(f"エラー: 設定ファイル '{args.config}' が見つかりません。")
             return
-        cfg = load_config(args.config)
-        # CLI 引数で個別オーバーライド可能
-        if args.dat_file:     cfg['dat_file']    = args.dat_file
-        if args.re_range:     cfg['re_range']    = list(args.re_range)
-        if args.alpha_range:  cfg['alpha_range'] = list(args.alpha_range)
-        if args.ncrit != 9.0: cfg['ncrit']       = args.ncrit
-        if args.no_browser:   cfg['no_browser']  = True
-    elif args.dat_file and args.re_range and args.alpha_range:
-        cfg = {
-            'dat_file':    args.dat_file,
-            're_range':    list(args.re_range),
-            'alpha_range': list(args.alpha_range),
-            'ncrit':       args.ncrit,
-            'xfoil_exe':   args.xfoil_exe,
-            'no_browser':  args.no_browser,
-        }
-    else:
-        cfg = interactive_mode()
+        defaults = load_config(args.config)
 
-    if args.save_config:
-        save_config(args.save_config, cfg)
-        return
+    cfg = interactive_mode(defaults=defaults)
 
     # ── cfg から変数を取り出す ──
     dat_file   = cfg.get('dat_file', '')
-    re_min, re_max, re_count = cfg['re_range']
-    re_count   = int(re_count)
+    re_min, re_max, re_step = cfg['re_range']   # step_width
     alpha_min, alpha_max, alpha_step = cfg['alpha_range']
     ncrit      = cfg.get('ncrit', 9.0)
     xfoil_exe  = cfg.get('xfoil_exe', 'xfoil.exe')
@@ -327,15 +328,16 @@ def main() -> None:
             print(f"エラー: XFOIL 実行ファイル '{xfoil_exe}' が見つかりません。")
             return
 
-    res    = np.linspace(re_min, re_max, re_count)
+    # Re 配列をステップ幅から生成
+    res    = np.arange(re_min, re_max + re_step / 2.0, re_step)
     alphas = np.arange(alpha_min, alpha_max + alpha_step / 2.0, alpha_step)
 
     airfoil_name  = os.path.splitext(os.path.basename(dat_file))[0]
     dat_file_abs  = os.path.abspath(dat_file)
     xfoil_exe_abs = os.path.abspath(xfoil_exe) if os.path.exists(xfoil_exe) else xfoil_exe
 
-    print(f"\n翼型: {airfoil_name}")
-    print(f"Re 範囲: {re_min:.0f} ～ {re_max:.0f}  ({re_count} 分割)")
+    print(f"翼型: {airfoil_name}")
+    print(f"Re 範囲: {re_min:.0f} ～ {re_max:.0f}  (ステップ {re_step:.0f}, 計 {len(res)} 点)")
     print(f"迎角: {alpha_min}° ～ {alpha_max}°  (ステップ {alpha_step}°)")
     print(f"N-crit: {ncrit} │ プロセス数: {mp.cpu_count()}")
     print()
@@ -378,7 +380,7 @@ def main() -> None:
 
     df          = pd.DataFrame(rows)
     valid_count = len(df)
-    total_count = re_count * len(alphas)
+    total_count = len(res) * len(alphas)
     print(f"\n計算完了: {valid_count} / {total_count} 点が収束")
 
     csv_raw = f"{airfoil_name}_polar_raw.csv"
@@ -427,11 +429,14 @@ def main() -> None:
     # ── 3D プロット作成 ──
     # (surf_z, raw_z, colorscale, ボタンラベル, Z軸タイトル)
     TRACE_CONFIGS = [
-        (Z_cl,      df['Cl'].values, 'Viridis', 'Cl (Lift)',         'Lift Coefficient (Cl)'),
-        (Z_cd,      df['Cd'].values, 'Cividis', 'Cd (Drag)',         'Drag Coefficient (Cd)'),
-        (Z_cm,      df['Cm'].values, 'Plasma',  'Cm (Moment)',       'Moment Coefficient (Cm)'),
-        (Z_ld,      raw_ld_vals,     'Inferno', 'Cl/Cd (Efficiency)','Lift-to-Drag Ratio (Cl/Cd)'),
+        (Z_cl, df['Cl'].values, 'Viridis', 'Cl (Lift)',          'Lift Coefficient (Cl)'),
+        (Z_cd, df['Cd'].values, 'Cividis', 'Cd (Drag)',          'Drag Coefficient (Cd)'),
+        (Z_cm, df['Cm'].values, 'Plasma',  'Cm (Moment)',        'Moment Coefficient (Cm)'),
+        (Z_ld, raw_ld_vals,     'Inferno', 'Cl/Cd (Efficiency)', 'Lift-to-Drag Ratio (Cl/Cd)'),
     ]
+
+    # 生データ点のスタイル: 小さく・半透明で補間面を隠さない
+    RAW_MARKER = dict(size=2, color='rgba(0, 0, 0, 0.25)')
 
     fig = go.Figure()
     for i, (surf_z, raw_z, cscale, label, _) in enumerate(TRACE_CONFIGS):
@@ -442,7 +447,7 @@ def main() -> None:
         ))
         fig.add_trace(go.Scatter3d(
             x=raw_alpha, y=raw_re, z=raw_z, mode='markers',
-            marker=dict(size=2, color='black'),
+            marker=RAW_MARKER,
             name=f'{label} (生データ点)', visible=visible,
         ))
 
